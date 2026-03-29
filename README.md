@@ -48,7 +48,7 @@ This project implements a reliable file transfer application using the Python So
 ## 5. File Structure
 
 ```text
-CMPT371_A3_SocketShare/
+CMPT371_A3_Socket_Programming/
 ├── README.md
 ├── .gitignore
 ├── demo/
@@ -80,7 +80,7 @@ These instructions assume a fresh machine after cloning the repository.
 ### Step 1: Open a terminal and move into the project folder
 
 ```bash
-cd CMPT371_A3_SocketShare
+cd CMPT371_A3_Socket_Programming
 ```
 
 ### Step 2: Confirm Python is installed
@@ -121,7 +121,7 @@ pip install -r requirements.txt
 
 ## 8. Exact Command to Run the Server
 
-From inside `CMPT371_A3_SocketShare/`:
+From inside `CMPT371_A3_Socket_Programming/`:
 
 ```bash
 python3 src/server.py
@@ -140,7 +140,7 @@ When the server starts successfully, it prints the listening address and upload 
 Open a second terminal, move into the same project folder, and run:
 
 ```bash
-cd CMPT371_A3_SocketShare
+cd CMPT371_A3_Socket_Programming
 python3 src/client.py
 ```
 
@@ -179,21 +179,21 @@ Use three terminals for a quick concurrency demo.
 ### Terminal 1: Server
 
 ```bash
-cd CMPT371_A3_SocketShare
+cd CMPT371_A3_Socket_Programming
 python3 src/server.py
 ```
 
 ### Terminal 2: Client A
 
 ```bash
-cd CMPT371_A3_SocketShare
+cd CMPT371_A3_Socket_Programming
 python3 src/client.py
 ```
 
 ### Terminal 3: Client B
 
 ```bash
-cd CMPT371_A3_SocketShare
+cd CMPT371_A3_Socket_Programming
 python3 src/client.py
 ```
 
@@ -295,57 +295,3 @@ Solution:
 
 - retry the transfer
 - ensure the connection was not interrupted during upload or download
-
-## 17. How This Project Demonstrates the Assignment Requirements
-
-### Connection establishment
-
-- The client explicitly connects to the server using TCP sockets.
-- The server logs when each client connects.
-
-### Data exchange
-
-- The client and server exchange structured JSON control messages.
-- File data is transferred as raw bytes after metadata negotiation.
-
-### Termination
-
-- The client can choose `QUIT` to disconnect cleanly.
-- The server also handles unexpected disconnects and `Ctrl+C` shutdown.
-
-### Multiple clients
-
-- The server creates a separate thread for each client connection.
-- Two or more clients can interact with the server during the same run.
-
-### File integrity verification
-
-- SHA-256 is computed before upload and after receipt on the server.
-- SHA-256 is also verified by the client after download.
-
-## 18. Notes for the Grader
-
-- Run the server first, then connect one or more clients.
-- Use the included `sample_files/demo.txt` file for a quick test.
-- The project is intentionally CLI-based and standard-library-only to keep setup simple and reliable.
-
-## 19. Rubric Alignment Summary
-
-This project meets the assignment rubric by providing a fully working Python Socket API application using a TCP client-server architecture, clean modular code, extensive comments and docstrings, clear concurrency support for multiple clients, SHA-256 file integrity verification, a detailed README for a fresh environment, a requirements file, clear limitations, and a short demo workflow that fits comfortably within the 2-minute video requirement.
-
-## 20. Academic Integrity & References
-
-### GenAI Usage
-
-- OpenAI Codex / ChatGPT was used to help scaffold the Python socket project structure, refine input handling, and draft README wording.
-
-### References
-
-- [Python Socket Programming HOWTO](https://docs.python.org/3/howto/sockets.html)
-- [Python `threading` documentation](https://docs.python.org/3/library/threading.html)
-- [Python `hashlib` documentation](https://docs.python.org/3/library/hashlib.html)
-
-### Submission Packaging Notes
-
-- The repository includes the source code, README, requirements file, sample file, and the demo video file in `demo/`.
-- Runtime-generated uploads and downloads are intentionally ignored by `.gitignore` so the submission stays clean and reproducible.
