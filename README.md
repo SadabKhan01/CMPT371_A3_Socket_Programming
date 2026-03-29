@@ -1,7 +1,6 @@
 # SocketShare
 
 **Course:** CMPT 371 - Data Communications & Networking  
-**Submission note:** Only one student should submit the final GitHub repository link.
 
 SocketShare is a TCP client-server file transfer application built with Python sockets. It demonstrates connection establishment, data exchange, integrity verification with SHA-256, multiple client handling with threads, and clean connection termination in a way that is easy to run, understand, and demo for a university networking assignment.
 
