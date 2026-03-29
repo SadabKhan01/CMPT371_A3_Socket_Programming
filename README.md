@@ -237,8 +237,8 @@ Fill this section before submission.
 
 | Name | Student ID | Email |
 | --- | --- | --- |
-| Your Name Here | Your Student ID Here | your_email@example.com |
-| Partner Name Here | Partner Student ID Here | partner_email@example.com |
+| Sadab Khan | 301576327 | msk29@sfu.ca |
+| Lai Chit Kwok | 301592147 | lck6@sfu.ca |
 
 ## 15. Video Demo Link
 
