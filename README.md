@@ -245,7 +245,6 @@ Fill this section before submission.
 The repository now includes the demo video file directly:
 
 - Demo video file: [A3_Demo.mov](demo/A3_Demo.mov)
-- Reminder: keep the final recording under 2 minutes to match the rubric
 
 ## 16. Troubleshooting
 
