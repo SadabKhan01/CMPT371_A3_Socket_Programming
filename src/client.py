@@ -62,10 +62,10 @@ class SocketShareClient:
 
         try:
             self.client_socket.connect((self.host, self.port))
-        except OSError as exc:
+        except OSError as exc:  # Catch network-related errors during connection
             print(f"Could not connect to {self.host}:{self.port}: {exc}")
-            self.client_socket.close()
-            self.client_socket = None
+            self.client_socket.close()  # Close the socket on connection failure
+            self.client_socket = None    # Reset socket to indicate no active connection
             return False
 
         print(f"Connected to SocketShare server at {self.host}:{self.port}")
@@ -79,7 +79,7 @@ class SocketShareClient:
         """
 
         if self.client_socket is None and not self.connect():
-            return
+            return  # Exit if initial connection fails
 
         try:
             while True:
@@ -99,15 +99,16 @@ class SocketShareClient:
                 elif choice in {"4", "HELP"}:
                     self.print_help()
                 elif choice in {"5", "QUIT", "EXIT"}:
-                    self.quit()
-                    break
+                    self.quit()  # Perform graceful disconnect
+                    break        # Exit the main loop
                 else:
                     print("Invalid option. Type 4 for help.")
 
-                if self.client_socket is None:
-                    print("Client session ended because the server connection is no longer active.")
+                if self.client_socket is None:  # Check if connection was closed
+                    print("Client session ended because the server connection "
+                          "is no longer active.")
                     break
-        except KeyboardInterrupt:
+        except KeyboardInterrupt:  # Handle Ctrl+C to gracefully close the client
             print("\nKeyboard interrupt received. Closing client.")
             self.quit()
 
@@ -148,7 +149,7 @@ class SocketShareClient:
         cleaned_input = strip_surrounding_quotes(file_path_text)
         local_path = Path(cleaned_input).expanduser()
 
-        if not local_path.is_file():
+        if not local_path.is_file():  # Ensure the local file exists
             print(f"Local file not found: {local_path}")
             return
 
@@ -167,22 +168,25 @@ class SocketShareClient:
         if response is None:
             return
 
+        # Server must send a "READY" response before file bytes are sent
         if response.get("type") != "READY" or response.get("status") != "OK":
             print(response.get("message", "Server refused the upload."))
             return
 
         try:
+            # Stream file bytes to the server
             send_file_bytes(self.require_socket(), local_path, self.buffer_size)
+            # Receive final upload result from server
             result = receive_json(self.require_socket())
-        except OSError as exc:
+        except OSError as exc:  # Handle issues reading the local file
             print(f"Could not read the local file for upload: {exc}")
             return
         except (ConnectionClosedError, ProtocolError) as exc:
-            self.close_local_socket()
+            self.close_local_socket()  # Close socket if connection is lost
             print(f"Upload failed because the connection was lost: {exc}")
             return
 
-        if result.get("status") != "OK":
+        if result.get("status") != "OK":  # Server reported an issue
             print(result.get("message", "Server reported an upload error."))
             return
 
@@ -202,12 +206,12 @@ class SocketShareClient:
 
         resolved_filename = self.resolve_server_filename(filename_text)
 
-        if resolved_filename is None:
+        if resolved_filename is None:  # Could not resolve input to a server filename
             return
 
         try:
             requested_name = safe_filename(resolved_filename)
-        except ValueError as exc:
+        except ValueError as exc:  # Invalid filename characters
             print(exc)
             return
 
@@ -215,6 +219,7 @@ class SocketShareClient:
         if response is None:
             return
 
+        # Server must send DOWNLOAD_READY before file bytes are sent
         if response.get("type") != "DOWNLOAD_READY" or response.get("status") != "OK":
             print(response.get("message", "Server could not start the download."))
             return
@@ -223,6 +228,7 @@ class SocketShareClient:
         expected_hash = response.get("sha256")
         server_filename = str(response.get("filename", requested_name))
 
+        # Validate crucial metadata from the server
         if not isinstance(expected_size, int) or expected_size < 0:
             print("Server returned an invalid file size.")
             return
@@ -232,9 +238,11 @@ class SocketShareClient:
             return
 
         downloads_directory = ensure_directory(DOWNLOADS_PATH)
+        # Prevent overwriting existing files with the same name
         destination_path = unique_path_for_file(downloads_directory, server_filename)
 
         try:
+            # Receive file bytes and compute hash simultaneously
             received_hash = receive_file_bytes(
                 self.require_socket(),
                 destination_path,
@@ -243,17 +251,18 @@ class SocketShareClient:
             )
         except (ConnectionClosedError, ProtocolError) as exc:
             self.close_local_socket()
-            remove_file_if_exists(destination_path)
+            remove_file_if_exists(destination_path)  # Clean up partial download
             print(f"Download failed because the connection was lost: {exc}")
             return
         except OSError as exc:
-            remove_file_if_exists(destination_path)
+            remove_file_if_exists(destination_path)  # Clean up if save failed
             print(f"Could not save the downloaded file: {exc}")
             return
 
-        if received_hash != expected_hash:
-            remove_file_if_exists(destination_path)
-            print("Integrity verification failed after download. The partial file was removed.")
+        if received_hash != expected_hash:  # Verify file integrity after download
+            remove_file_if_exists(destination_path)  # Remove corrupt file
+            print("Integrity verification failed after download. "
+                  "The partial file was removed.")
             return
 
         print(f"Download complete: {destination_path}")
@@ -269,13 +278,14 @@ class SocketShareClient:
             return
 
         try:
-            send_json(self.client_socket, {"type": "QUIT"})
-            response = receive_json(self.client_socket)
+            send_json(self.client_socket, {"type": "QUIT"})  # Send QUIT command
+            response = receive_json(self.client_socket)     # Await server's response
             print(response.get("message", "Disconnected from server."))
         except (ConnectionClosedError, ProtocolError):
+            # If connection is already closed or protocol error, just acknowledge
             print("Connection closed.")
         finally:
-            self.close_local_socket()
+            self.close_local_socket()  # Always ensure local socket is closed
 
     def send_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """
@@ -290,18 +300,18 @@ class SocketShareClient:
         """
 
         try:
-            send_json(self.require_socket(), request)
-            response = receive_json(self.require_socket())
-        except ConnectionClosedError as exc:
+            send_json(self.require_socket(), request)   
+            response = receive_json(self.require_socket()) 
+        except ConnectionClosedError as exc:  # Handle unexpected connection loss
             self.close_local_socket()
             print(f"Connection lost: {exc}")
             return None
-        except ProtocolError as exc:
+        except ProtocolError as exc:  # Handle malformed server responses
             self.close_local_socket()
             print(f"Protocol error: {exc}")
             return None
 
-        if response.get("status") == "ERROR":
+        if response.get("status") == "ERROR":  # Server explicitly reported an error
             print(response.get("message", "The server returned an error."))
 
         return response
@@ -321,9 +331,9 @@ class SocketShareClient:
 
         files = response.get("files", [])
         if isinstance(files, list):
-            self.last_listed_files = files
+            self.last_listed_files = files  # Cache the list for download selection
         else:
-            self.last_listed_files = []
+            self.last_listed_files = []     # Reset if response is not a valid list
 
         return response
 
@@ -344,44 +354,56 @@ class SocketShareClient:
 
         cleaned_input = strip_surrounding_quotes(filename_text)
 
-        if not cleaned_input:
+        if not cleaned_input:  # Handle empty input
             print("Please enter a file number or filename.")
             return None
 
         files = self.last_listed_files
-        if not files:
+        if not files:  # If no cached list, try to fetch it
             response = self.fetch_file_listing()
             if response is None:
                 return None
             files = self.last_listed_files
 
+        # Attempt to match input as a file number (e.g., "1", "5")
         if re.fullmatch(r"\d+", cleaned_input):
             selection = int(cleaned_input)
             if 1 <= selection <= len(files):
                 return str(files[selection - 1].get("filename", ""))
 
-            print(f"File number {selection} is out of range. Run LIST to see valid numbers.")
+            # Provide feedback if number is out of range
+            print(f"File number {selection} is out of range. "
+                  "Run LIST to see valid numbers.")
             return None
 
+        # Attempt to match input as a numbered display line (e.g., "1. my_file.txt (10 KB)")
         numbered_line_match = re.match(r"^\s*(\d+)\.\s+.+$", cleaned_input)
         if numbered_line_match:
             selection = int(numbered_line_match.group(1))
             if 1 <= selection <= len(files):
                 return str(files[selection - 1].get("filename", ""))
 
-            print(f"File number {selection} is out of range. Run LIST to see valid numbers.")
+            # Provide feedback if number from line is out of range
+            print(f"File number {selection} is out of range. "
+                  "Run LIST to see valid numbers.")
             return None
 
-        if not files:
+        if not files:  # If still no files, treat input as literal filename
             return cleaned_input
 
-        display_line_map: dict[str, str] = {}
-        normalized_name_map: dict[str, list[str]] = {}
+        #
+        # Block: Fuzzy matching for filenames or display lines
+        # This section handles more flexible matching of user input
+        # against the cached file list.
+        #
+        display_line_map: dict[str, str] = {}    # Map normalized display lines to filenames
+        normalized_name_map: dict[str, list[str]] = {} # Map normalized names to original
 
         for index, file_info in enumerate(files, start=1):
             filename = str(file_info.get("filename", ""))
             size = int(file_info.get("size", 0))
             display_line = f"{index}. {filename} ({format_file_size(size)})"
+            # Normalize both for consistent matching
             display_line_map[normalize_text_for_matching(display_line)] = filename
             normalized_name_map.setdefault(
                 normalize_text_for_matching(filename), []
@@ -389,17 +411,19 @@ class SocketShareClient:
 
         normalized_input = normalize_text_for_matching(cleaned_input)
 
-        if normalized_input in display_line_map:
+        if normalized_input in display_line_map:  # Direct match of normalized display line
             return display_line_map[normalized_input]
 
         matched_filenames = normalized_name_map.get(normalized_input, [])
-        if len(matched_filenames) == 1:
+        if len(matched_filenames) == 1:  # Unique match for normalized filename
             return matched_filenames[0]
 
-        if len(matched_filenames) > 1:
-            print("Multiple files matched that name. Please use the file number from LIST.")
+        if len(matched_filenames) > 1:  # Ambiguous match, require specific input
+            print("Multiple files matched that name. "
+                  "Please use the file number from LIST.")
             return None
 
+        # If no match, assume input is an exact filename for server lookup
         return cleaned_input
 
     def require_socket(self) -> socket.socket:

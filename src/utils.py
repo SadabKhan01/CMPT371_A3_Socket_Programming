@@ -38,16 +38,16 @@ def compute_sha256(file_path: Path, chunk_size: int = 65_536) -> str:
         str: The hexadecimal representation of the file's SHA-256 hash.
     """
 
-    digest = hashlib.sha256()
+    digest = hashlib.sha256() # Initialize SHA-256 hash object
 
-    with file_path.open("rb") as file_handle:
+    with file_path.open("rb") as file_handle: # Open file in binary read mode
         while True:
-            chunk = file_handle.read(chunk_size)
+            chunk = file_handle.read(chunk_size) # Read file in specified chunk sizes
             if not chunk:
-                break
-            digest.update(chunk)
+                break # Exit loop when end of file is reached
+            digest.update(chunk) # Update the hash with the current chunk
 
-    return digest.hexdigest()
+    return digest.hexdigest() # Return the hexadecimal representation of the hash
 
 
 def format_file_size(num_bytes: int) -> str:
@@ -63,16 +63,17 @@ def format_file_size(num_bytes: int) -> str:
     """
 
     size = float(num_bytes)
-    units = ["B", "KB", "MB", "GB", "TB"]
+    units = ["B", "KB", "MB", "GB", "TB"] # Define standard units
 
     for unit in units:
+        # Check if size is less than 1024 or if it's the largest unit
         if size < 1024 or unit == units[-1]:
             if unit == "B":
-                return f"{int(size)} {unit}"
-            return f"{size:.2f} {unit}"
-        size /= 1024
+                return f"{int(size)} {unit}" # Return integer for bytes
+            return f"{size:.2f} {unit}"     # Return with 2 decimal places for larger units
+        size /= 1024 # Convert to next larger unit
 
-    return f"{num_bytes} B"
+    return f"{num_bytes} B" # Fallback if loop finishes unexpectedly
 
 
 def safe_filename(filename: str) -> str:
@@ -91,8 +92,9 @@ def safe_filename(filename: str) -> str:
                     traversal attempt (e.g., ".", "..").
     """
 
-    clean_name = Path(filename).name.strip()
+    clean_name = Path(filename).name.strip() # Extract only the filename component
 
+    # Prevent path traversal attempts by checking for reserved names
     if clean_name in {"", ".", ".."}:
         raise ValueError("A valid filename is required.")
 
@@ -111,14 +113,16 @@ def strip_surrounding_quotes(text: str) -> str:
         str: The string with one layer of surrounding quotes removed, if they existed.
     """
 
-    cleaned_text = text.strip()
+    cleaned_text = text.strip() # Remove leading/trailing whitespace first
 
+    # Check if the string has at least two characters,
+    # starts and ends with the same quote, and is a quote
     if (
         len(cleaned_text) >= 2
         and cleaned_text[0] == cleaned_text[-1]
         and cleaned_text[0] in {'"', "'"}
     ):
-        return cleaned_text[1:-1].strip()
+        return cleaned_text[1:-1].strip() # Remove quotes and re-strip whitespace
 
     return cleaned_text
 
@@ -139,10 +143,12 @@ def normalize_text_for_matching(text: str) -> str:
              whitespace-agnostic comparisons.
     """
 
-    normalized_text = unicodedata.normalize("NFKC", text)
+    normalized_text = unicodedata.normalize("NFKC", text) # Apply Unicode normalization
+    # Replace all whitespace characters (tabs, newlines, etc.) with single spaces
     normalized_spaces = "".join(
         " " if character.isspace() else character for character in normalized_text
     )
+    # Split by space and join to collapse multiple spaces into one, then strip
     return " ".join(normalized_spaces.split())
 
 
@@ -160,19 +166,20 @@ def unique_path_for_file(directory: Path, filename: str) -> Path:
         Path: A pathlib.Path object representing a unique, non-existent file path.
     """
 
-    ensure_directory(directory)
-    candidate = directory / filename
+    ensure_directory(directory) # Ensure the target directory exists
+    candidate = directory / filename # Start with the desired filename
 
     if not candidate.exists():
-        return candidate
+        return candidate # If name is unique, use it
 
     base_path = Path(filename)
     counter = 1
 
-    while True:
+    while True: # Loop to find an available name
+        # Append counter before suffix: filename_1.ext, filename_2.ext
         candidate = directory / f"{base_path.stem}_{counter}{base_path.suffix}"
         if not candidate.exists():
-            return candidate
+            return candidate # Found a unique name
         counter += 1
 
 
@@ -192,7 +199,9 @@ def build_file_listing(directory: Path) -> list[dict[str, int | str]]:
     ensure_directory(directory)
     files: list[dict[str, int | str]] = []
 
+    # Iterate through directory contents, sorted by lowercase name
     for path in sorted(directory.iterdir(), key=lambda item: item.name.lower()):
+        # Only include regular files and exclude hidden files (starting with '.')
         if path.is_file() and not path.name.startswith("."):
             files.append({"filename": path.name, "size": path.stat().st_size})
 
@@ -210,8 +219,8 @@ def remove_file_if_exists(file_path: Path) -> None:
     """
 
     try:
-        file_path.unlink()
-    except FileNotFoundError:
+        file_path.unlink() # Attempt to delete the file
+    except FileNotFoundError: # If file doesn't exist, do nothing
         pass
 
 

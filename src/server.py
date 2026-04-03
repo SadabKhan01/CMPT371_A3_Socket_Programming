@@ -69,30 +69,31 @@ class SocketShareServer:
 
         ensure_directory(STORAGE_PATH)
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Allow reuse of the address, useful for rapid restarts of the server
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         try:
-            self.server_socket.bind((self.host, self.port))
-            self.server_socket.listen()
-            self.server_socket.settimeout(1.0)
-        except OSError as exc:
+            self.server_socket.bind((self.host, self.port))  # Bind to specified host/port
+            self.server_socket.listen()  # Start listening for incoming connections
+            self.server_socket.settimeout(1.0) # Set timeout for accept() to allow shutdown checks
+        except OSError as exc:  # Catch network-related errors during setup
             log_event(
                 "SERVER",
                 f"Could not start the server on {self.host}:{self.port}: {exc}",
             )
-            self.server_socket.close()
+            self.server_socket.close() # Ensure socket is closed on failure
             return 1
 
-        self.is_running.set()
+        self.is_running.set() # Signal that the server is now running
         log_event("SERVER", f"SocketShare server listening on {self.host}:{self.port}")
         log_event("SERVER", f"Upload directory: {STORAGE_PATH}")
 
         try:
-            self.accept_loop()
-        except KeyboardInterrupt:
+            self.accept_loop()  # Main loop for accepting clients
+        except KeyboardInterrupt: # Handle Ctrl+C for graceful shutdown
             log_event("SERVER", "Keyboard interrupt received. Stopping the server.")
         finally:
-            self.shutdown()
+            self.shutdown() # Ensure shutdown routine is always called
 
         return 0
 
@@ -103,21 +104,23 @@ class SocketShareServer:
         The loop continues until the `is_running` event is cleared (server shutdown).
         """
 
-        while self.is_running.is_set():
+        while self.is_running.is_set():  # Loop while server is marked as running
             try:
+                # Accept a new connection (with timeout for graceful shutdown)
                 client_socket, client_address = self.server_socket.accept()
             except socket.timeout:
-                continue
+                continue  # Continue if no connection within timeout
             except OSError:
-                break
+                break     # Break if socket is closed while accepting
 
+            # Create a new thread for each client to handle concurrently
             client_thread = threading.Thread(
                 target=self.handle_client,
                 args=(client_socket, client_address),
-                daemon=True,
+                daemon=True,  # Daemon threads exit when main program exits
             )
             client_thread.start()
-            self.client_threads.append(client_thread)
+            self.client_threads.append(client_thread) # Keep track of client threads
 
     def shutdown(self) -> None:
         """
@@ -126,15 +129,16 @@ class SocketShareServer:
         to join all client handler threads to ensure they finish.
         """
 
-        self.is_running.clear()
+        self.is_running.clear()  # Signal `accept_loop` to stop
 
         if self.server_socket is not None:
             try:
-                self.server_socket.close()
+                self.server_socket.close()  # Close the listening socket
             except OSError:
-                pass
+                pass # Ignore errors if socket is already closed
 
         for client_thread in self.client_threads:
+            # Wait for each client thread to finish gracefully, with a timeout
             client_thread.join(timeout=1.0)
 
         log_event("SERVER", "Server shutdown complete.")
@@ -156,39 +160,41 @@ class SocketShareServer:
         client_label = format_endpoint(client_address)
         log_event("SERVER", f"Client connected: {client_label}")
 
-        with client_socket:
+        with client_socket:  # Ensure socket is closed upon exiting this block
             while True:
                 try:
-                    request = receive_json(client_socket)
-                except ConnectionClosedError:
+                    request = receive_json(client_socket) # Attempt to receive client request
+                except ConnectionClosedError: # Client disconnected gracefully or abruptly
                     log_event("SERVER", f"Client disconnected unexpectedly: {client_label}")
-                    break
-                except ProtocolError as exc:
+                    break # Exit loop, clean up connection
+                except ProtocolError as exc: # Malformed JSON or protocol violation
                     log_event(
                         "SERVER",
-                        f"Malformed message from {client_label}. Closing connection: {exc}",
+                        f"Malformed message from {client_label}. "
+                        f"Closing connection: {exc}",
                     )
-                    self.send_error(client_socket, str(exc))
-                    break
+                    self.send_error(client_socket, str(exc)) # Inform client of error
+                    break # Exit loop due to protocol error
 
                 try:
+                    # Dispatch request to appropriate handler; determine if connection persists
                     should_continue = self.dispatch_request(
                         client_socket, client_label, request
                     )
-                except ConnectionClosedError:
+                except ConnectionClosedError: # Handler lost connection during processing
                     log_event(
                         "SERVER",
                         f"Connection lost while serving client: {client_label}",
                     )
                     break
-                except OSError as exc:
+                except OSError as exc: # General server-side file I/O error
                     log_event(
                         "SERVER",
                         f"Server-side I/O error while serving {client_label}: {exc}",
                     )
                     break
 
-                if not should_continue:
+                if not should_continue: # Handler indicated connection should close
                     break
 
         log_event("SERVER", f"Connection closed: {client_label}")
@@ -210,11 +216,11 @@ class SocketShareServer:
                   should be closed (e.g., after a QUIT command).
         """
 
-        command_type = str(request.get("type", "")).upper().strip()
+        command_type = str(request.get("type", "")).upper().strip() # Standardize command
 
         if command_type == "LIST":
             self.handle_list(client_socket)
-            return True
+            return True # Keep connection open for further requests
 
         if command_type == "UPLOAD":
             return self.handle_upload(client_socket, client_label, request)
@@ -223,6 +229,7 @@ class SocketShareServer:
             return self.handle_download(client_socket, client_label, request)
 
         if command_type == "QUIT":
+            # Send a confirmation message before closing
             send_json(
                 client_socket,
                 {
@@ -232,10 +239,11 @@ class SocketShareServer:
                 },
             )
             log_event("SERVER", f"Client requested clean disconnect: {client_label}")
-            return False
+            return False # Signal to close the connection
 
+        # Handle unrecognized commands
         self.send_error(client_socket, "Unsupported command received.")
-        return True
+        return True # Keep connection open, client might send valid commands next
 
     def handle_list(self, client_socket: socket.socket) -> None:
         """
@@ -246,13 +254,13 @@ class SocketShareServer:
             client_socket (socket.socket): The socket object for the client connection.
         """
 
-        files = build_file_listing(STORAGE_PATH)
+        files = build_file_listing(STORAGE_PATH) # Get sorted list of files
         message = "No files are currently available on the server."
 
-        if files:
+        if files: # Customize message if files are present
             message = f"{len(files)} file(s) available on the server."
 
-        send_json(
+        send_json( # Send the file list and status back to the client
             client_socket,
             {
                 "type": "LIST_RESPONSE",
@@ -283,21 +291,24 @@ class SocketShareServer:
 
         try:
             original_name = safe_filename(str(request.get("filename", "")))
-        except ValueError as exc:
+        except ValueError as exc: # Catch invalid characters/paths in filename
             self.send_error(client_socket, str(exc))
             return True
 
         expected_size = request.get("filesize")
         expected_hash = request.get("sha256")
 
+        # Validate crucial metadata received from the client
         if not isinstance(expected_size, int) or expected_size < 0:
-            self.send_error(client_socket, "UPLOAD requires a non-negative integer filesize.")
+            self.send_error(client_socket, "UPLOAD requires a "
+                                           "non-negative integer filesize.")
             return True
 
         if not isinstance(expected_hash, str) or len(expected_hash) != 64:
             self.send_error(client_socket, "UPLOAD requires a valid SHA-256 hash.")
             return True
 
+        # Determine a unique and safe path to save the incoming file
         destination_path = unique_path_for_file(STORAGE_PATH, original_name)
 
         # Tell the client when the server is ready so both sides stay in sync
@@ -313,33 +324,36 @@ class SocketShareServer:
         )
 
         try:
+            # Receive file bytes and compute its hash on the fly
             received_hash = receive_file_bytes(
                 client_socket, destination_path, expected_size, self.buffer_size
             )
-        except ConnectionClosedError:
-            remove_file_if_exists(destination_path)
+        except ConnectionClosedError: # Client disconnected during transfer
+            remove_file_if_exists(destination_path) # Clean up partial file
             log_event(
                 "SERVER",
                 f"Upload interrupted because {client_label} disconnected early.",
             )
-            return False
-        except OSError as exc:
-            remove_file_if_exists(destination_path)
+            return False # Signal to close this client connection
+        except OSError as exc: # Problem writing to disk
+            remove_file_if_exists(destination_path) # Clean up partial file
             self.send_error(client_socket, f"Server failed to save the upload: {exc}")
             return True
 
         saved_size = destination_path.stat().st_size
 
+        # Perform final integrity verification using size and hash
         if saved_size != expected_size or received_hash != expected_hash:
-            remove_file_if_exists(destination_path)
+            remove_file_if_exists(destination_path) # Remove potentially corrupt file
             self.send_error(client_socket, "Upload failed integrity verification.")
             log_event(
                 "SERVER",
-                f"Integrity mismatch for uploaded file from {client_label}: {original_name}",
+                f"Integrity mismatch for uploaded file from {client_label}: "
+                f"{original_name}",
             )
             return True
 
-        send_json(
+        send_json( # Send success response back to client
             client_socket,
             {
                 "type": "UPLOAD_RESULT",
@@ -351,7 +365,7 @@ class SocketShareServer:
             },
         )
 
-        log_event(
+        log_event( # Log successful upload
             "SERVER",
             (
                 f"Stored upload from {client_label}: {destination_path.name} "
@@ -381,13 +395,13 @@ class SocketShareServer:
 
         try:
             requested_name = safe_filename(str(request.get("filename", "")))
-        except ValueError as exc:
+        except ValueError as exc: # Catch invalid characters/paths in filename
             self.send_error(client_socket, str(exc))
             return True
 
-        file_path = STORAGE_PATH / requested_name
+        file_path = STORAGE_PATH / requested_name # Construct full path to file
 
-        if not file_path.is_file():
+        if not file_path.is_file(): # Check if the requested file actually exists
             self.send_error(client_socket, f"Server file not found: {requested_name}")
             return True
 
@@ -409,15 +423,15 @@ class SocketShareServer:
         )
 
         try:
-            send_file_bytes(client_socket, file_path, self.buffer_size)
-        except ConnectionClosedError:
+            send_file_bytes(client_socket, file_path, self.buffer_size) # Stream file
+        except ConnectionClosedError: # Client disconnected during transfer
             log_event(
                 "SERVER",
                 f"Download interrupted because {client_label} disconnected early.",
             )
-            return False
+            return False # Signal to close this client connection
 
-        log_event(
+        log_event( # Log successful download
             "SERVER",
             (
                 f"Sent file to {client_label}: {file_path.name} "
@@ -437,7 +451,7 @@ class SocketShareServer:
         """
 
         try:
-            send_json(
+            send_json( # Attempt to send an ERROR message to the client
                 client_socket,
                 {
                     "type": "ERROR",
@@ -445,7 +459,7 @@ class SocketShareServer:
                     "message": message,
                 },
             )
-        except ConnectionClosedError:
+        except ConnectionClosedError: # Ignore if client already disconnected
             pass
 
 

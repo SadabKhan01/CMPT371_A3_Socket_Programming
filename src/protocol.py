@@ -44,13 +44,14 @@ def send_json(sock: socket.socket, message: dict[str, Any]) -> None:
         ConnectionClosedError: If sending data to the peer fails unexpectedly.
     """
 
-    payload = json.dumps(message).encode("utf-8")
-    header = struct.pack("!I", len(payload))
+    payload = json.dumps(message).encode("utf-8") # Serialize dict to JSON bytes
+    header = struct.pack("!I", len(payload))     # Pack payload length into 4-byte big-endian header
 
     try:
-        sock.sendall(header)
-        sock.sendall(payload)
+        sock.sendall(header)  # Send the length header first
+        sock.sendall(payload) # Then send the JSON payload
     except OSError as exc:
+        # Raise a custom error if network operation fails
         raise ConnectionClosedError("Failed to send data to the peer.") from exc
 
 
@@ -72,21 +73,25 @@ def receive_json(sock: socket.socket) -> dict[str, Any]:
                        or the decoded message is not a dictionary.
     """
 
-    header = receive_exactly(sock, HEADER_LENGTH_SIZE)
-    message_length = struct.unpack("!I", header)[0]
+    header = receive_exactly(sock, HEADER_LENGTH_SIZE)  # Read the 4-byte header
+    message_length = struct.unpack("!I", header)[0]      # Unpack big-endian integer length
 
+    # Validate message length to prevent resource exhaustion or malformed data
     if message_length <= 0 or message_length > MAX_JSON_MESSAGE_SIZE:
         raise ProtocolError(
             f"Invalid JSON message length received: {message_length} bytes."
         )
 
-    payload = receive_exactly(sock, message_length)
+    payload = receive_exactly(sock, message_length)  # Read the exact JSON payload bytes
 
     try:
+        # Decode payload from UTF-8 and parse as JSON
         message = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        # Catch issues with character encoding or JSON structure
         raise ProtocolError("Received malformed JSON data.") from exc
 
+    # Ensure the decoded message is a dictionary, as expected by the protocol
     if not isinstance(message, dict):
         raise ProtocolError("Protocol messages must decode into JSON objects.")
 
@@ -111,23 +116,26 @@ def receive_exactly(sock: socket.socket, total_bytes: int) -> bytes:
                                or if an OSError occurs during reception.
     """
 
-    if total_bytes < 0:
+    if total_bytes < 0:  # Validate input to prevent infinite loops or errors
         raise ProtocolError("Cannot receive a negative number of bytes.")
 
-    chunks = bytearray()
+    chunks = bytearray()  # Use bytearray for efficient appending of bytes
 
     while len(chunks) < total_bytes:
         try:
+            # Attempt to receive the remaining bytes
             chunk = sock.recv(total_bytes - len(chunks))
         except OSError as exc:
+            # Network error during reception
             raise ConnectionClosedError("Failed while receiving socket data.") from exc
 
         if not chunk:
+            # Peer closed the connection unexpectedly
             raise ConnectionClosedError("The peer closed the connection.")
 
-        chunks.extend(chunk)
+        chunks.extend(chunk)  # Add received chunk to the buffer
 
-    return bytes(chunks)
+    return bytes(chunks)  # Convert bytearray to immutable bytes object
 
 
 def send_file_bytes(
@@ -145,15 +153,16 @@ def send_file_bytes(
         ConnectionClosedError: If an OSError occurs while sending file data.
     """
 
-    with file_path.open("rb") as file_handle:
+    with file_path.open("rb") as file_handle:  # Open file in binary read mode
         while True:
-            chunk = file_handle.read(buffer_size)
+            chunk = file_handle.read(buffer_size)  # Read file in chunks
             if not chunk:
-                break
+                break  # End of file reached
 
             try:
-                sock.sendall(chunk)
+                sock.sendall(chunk)  # Ensure all data in chunk is sent
             except OSError as exc:
+                # Catch network errors during transmission
                 raise ConnectionClosedError(
                     "Failed while sending file data."
                 ) from exc
@@ -180,17 +189,18 @@ def receive_file_bytes(
         ConnectionClosedError: If the peer closes the connection unexpectedly during reception.
     """
 
-    if expected_size < 0:
+    if expected_size < 0:  # Validate input to prevent errors
         raise ProtocolError("File size cannot be negative.")
 
-    remaining_bytes = expected_size
-    digest = hashlib.sha256()
+    remaining_bytes = expected_size  # Track how many bytes are still expected
+    digest = hashlib.sha256()        # Initialize SHA-256 hash calculator
 
-    with destination_path.open("wb") as file_handle:
+    with destination_path.open("wb") as file_handle:  # Open file in binary write mode
         while remaining_bytes > 0:
+            # Receive the next chunk, limiting to remaining bytes or buffer size
             chunk = receive_exactly(sock, min(buffer_size, remaining_bytes))
-            file_handle.write(chunk)
-            digest.update(chunk)
-            remaining_bytes -= len(chunk)
+            file_handle.write(chunk)   # Write chunk to disk
+            digest.update(chunk)       # Update hash with current chunk
+            remaining_bytes -= len(chunk)  # Decrement remaining bytes
 
-    return digest.hexdigest()
+    return digest.hexdigest()  # Return the final hexadecimal hash
