@@ -36,9 +36,20 @@ from utils import (
 
 
 class SocketShareServer:
-    """Threaded TCP file-transfer server."""
+    """
+    Threaded TCP file-transfer server that handles multiple clients concurrently.
+    Each client connection is managed in a separate thread.
+    """
 
     def __init__(self, host: str, port: int, buffer_size: int) -> None:
+        """
+        Initializes the SocketShareServer.
+
+        Args:
+            host (str): The hostname or IP address the server will bind to.
+            port (int): The TCP port number the server will listen on.
+            buffer_size (int): The size of the buffer used for sending/receiving data.
+        """
         self.host = host
         self.port = port
         self.buffer_size = buffer_size
@@ -47,7 +58,14 @@ class SocketShareServer:
         self.client_threads: list[threading.Thread] = []
 
     def start(self) -> int:
-        """Start listening for client connections."""
+        """
+        Starts the server, binds to the specified host and port, and begins listening
+        for incoming client connections. This method also handles graceful shutdown
+        on KeyboardInterrupt.
+
+        Returns:
+            int: An exit code (0 for success, 1 for failure to start).
+        """
 
         ensure_directory(STORAGE_PATH)
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -79,7 +97,11 @@ class SocketShareServer:
         return 0
 
     def accept_loop(self) -> None:
-        """Accept new clients until the server is stopped."""
+        """
+        Continuously accepts new client connections in a loop.
+        Each new client connection is handled in a separate daemon thread.
+        The loop continues until the `is_running` event is cleared (server shutdown).
+        """
 
         while self.is_running.is_set():
             try:
@@ -98,7 +120,11 @@ class SocketShareServer:
             self.client_threads.append(client_thread)
 
     def shutdown(self) -> None:
-        """Stop the listening socket and allow worker threads to finish."""
+        """
+        Shuts down the server gracefully.
+        It stops accepting new connections, closes the server socket, and attempts
+        to join all client handler threads to ensure they finish.
+        """
 
         self.is_running.clear()
 
@@ -116,7 +142,16 @@ class SocketShareServer:
     def handle_client(
         self, client_socket: socket.socket, client_address: tuple[str, int]
     ) -> None:
-        """Serve one client until it disconnects or sends QUIT."""
+        """
+        Handles incoming requests from a single client. This method runs in a
+        dedicated thread for each connected client. It continuously receives
+        JSON requests and dispatches them to appropriate handlers until the
+        client disconnects or sends a QUIT command.
+
+        Args:
+            client_socket (socket.socket): The socket object for the client connection.
+            client_address (tuple[str, int]): The IP address and port of the connected client.
+        """
 
         client_label = format_endpoint(client_address)
         log_event("SERVER", f"Client connected: {client_label}")
@@ -161,7 +196,19 @@ class SocketShareServer:
     def dispatch_request(
         self, client_socket: socket.socket, client_label: str, request: dict[str, Any]
     ) -> bool:
-        """Route a parsed client request to the correct handler."""
+        """
+        Routes an incoming client request to the appropriate handler method based on
+        the 'type' field in the request.
+
+        Args:
+            client_socket (socket.socket): The socket object for the client connection.
+            client_label (str): A string identifier for the client (e.g., "IP:Port").
+            request (dict[str, Any]): The parsed JSON request from the client.
+
+        Returns:
+            bool: True if the client connection should remain open, False if it
+                  should be closed (e.g., after a QUIT command).
+        """
 
         command_type = str(request.get("type", "")).upper().strip()
 
@@ -191,7 +238,13 @@ class SocketShareServer:
         return True
 
     def handle_list(self, client_socket: socket.socket) -> None:
-        """Send the current list of uploaded files to the client."""
+        """
+        Handles a client's 'LIST' request by compiling a list of available files
+        in the server's storage and sending it back to the client.
+
+        Args:
+            client_socket (socket.socket): The socket object for the client connection.
+        """
 
         files = build_file_listing(STORAGE_PATH)
         message = "No files are currently available on the server."
@@ -212,7 +265,21 @@ class SocketShareServer:
     def handle_upload(
         self, client_socket: socket.socket, client_label: str, request: dict[str, Any]
     ) -> bool:
-        """Receive a file upload, verify it, and store it on the server."""
+        """
+        Handles a client's 'UPLOAD' request. It receives file metadata, sends a
+        'READY' signal, then receives the file bytes. After reception, it performs
+        integrity verification using file size and SHA-256 hash.
+
+        Args:
+            client_socket (socket.socket): The socket object for the client connection.
+            client_label (str): A string identifier for the client.
+            request (dict[str, Any]): The 'UPLOAD' request dictionary containing
+                                     filename, filesize, and SHA-256 hash.
+
+        Returns:
+            bool: True if the client connection should remain open, False if an
+                  unrecoverable error or disconnection occurred.
+        """
 
         try:
             original_name = safe_filename(str(request.get("filename", "")))
@@ -296,7 +363,21 @@ class SocketShareServer:
     def handle_download(
         self, client_socket: socket.socket, client_label: str, request: dict[str, Any]
     ) -> bool:
-        """Send a requested file to the client."""
+        """
+        Handles a client's 'DOWNLOAD' request. It locates the requested file,
+        sends metadata (filename, size, SHA-256) to the client, and then
+        streams the file's bytes over the socket.
+
+        Args:
+            client_socket (socket.socket): The socket object for the client connection.
+            client_label (str): A string identifier for the client.
+            request (dict[str, Any]): The 'DOWNLOAD' request dictionary containing
+                                     the requested filename.
+
+        Returns:
+            bool: True if the client connection should remain open, False if an
+                  unrecoverable error or disconnection occurred during the transfer.
+        """
 
         try:
             requested_name = safe_filename(str(request.get("filename", "")))
@@ -346,7 +427,14 @@ class SocketShareServer:
         return True
 
     def send_error(self, client_socket: socket.socket, message: str) -> None:
-        """Send an error response if the connection is still usable."""
+        """
+        Sends an error response back to the client if the connection is still active.
+        This is used to inform the client about issues encountered on the server.
+
+        Args:
+            client_socket (socket.socket): The socket object for the client connection.
+            message (str): The error message to send to the client.
+        """
 
         try:
             send_json(
@@ -362,7 +450,13 @@ class SocketShareServer:
 
 
 def parse_arguments() -> argparse.Namespace:
-    """Parse command-line arguments for the server."""
+    """
+    Parses command-line arguments provided to the server script.
+
+    Returns:
+        argparse.Namespace: An object containing the parsed arguments,
+                            e.g., host and port.
+    """
 
     parser = argparse.ArgumentParser(description="Start the SocketShare TCP server.")
     parser.add_argument("--host", default=DEFAULT_HOST, help="Host address to bind to.")
@@ -373,7 +467,13 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main() -> int:
-    """Program entry point."""
+    """
+    Program entry point for the SocketShare server.
+    Parses arguments, initializes the server, and starts its listening loop.
+
+    Returns:
+        int: Exit code of the program (0 for success, 1 for failure).
+    """
 
     arguments = parse_arguments()
     server = SocketShareServer(arguments.host, arguments.port, BUFFER_SIZE)

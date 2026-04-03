@@ -31,7 +31,18 @@ class ConnectionClosedError(ConnectionError):
 
 
 def send_json(sock: socket.socket, message: dict[str, Any]) -> None:
-    """Send one length-prefixed JSON control message."""
+    """
+    Sends a length-prefixed JSON control message over the socket.
+    The message is first converted to a JSON string, then encoded to bytes.
+    Its length is packed into a 4-byte big-endian header.
+
+    Args:
+        sock (socket.socket): The socket connected to the peer.
+        message (dict[str, Any]): The dictionary to be sent as a JSON message.
+
+    Raises:
+        ConnectionClosedError: If sending data to the peer fails unexpectedly.
+    """
 
     payload = json.dumps(message).encode("utf-8")
     header = struct.pack("!I", len(payload))
@@ -44,7 +55,22 @@ def send_json(sock: socket.socket, message: dict[str, Any]) -> None:
 
 
 def receive_json(sock: socket.socket) -> dict[str, Any]:
-    """Read one length-prefixed JSON control message from the socket."""
+    """
+    Receives and decodes one length-prefixed JSON control message from the socket.
+    It first reads a 4-byte header to determine the message length, then reads
+    the payload, and finally decodes it from UTF-8 to a JSON dictionary.
+
+    Args:
+        sock (socket.socket): The socket connected to the peer.
+
+    Returns:
+        dict[str, Any]: The decoded JSON message as a dictionary.
+
+    Raises:
+        ConnectionClosedError: If the connection closes unexpectedly while receiving data.
+        ProtocolError: If the received message length is invalid, the JSON is malformed,
+                       or the decoded message is not a dictionary.
+    """
 
     header = receive_exactly(sock, HEADER_LENGTH_SIZE)
     message_length = struct.unpack("!I", header)[0]
@@ -68,7 +94,22 @@ def receive_json(sock: socket.socket) -> dict[str, Any]:
 
 
 def receive_exactly(sock: socket.socket, total_bytes: int) -> bytes:
-    """Read an exact number of bytes or raise an error if the peer disconnects."""
+    """
+    Receives an exact number of bytes from the socket.
+    This function blocks until `total_bytes` are received or an error occurs.
+
+    Args:
+        sock (socket.socket): The socket connected to the peer.
+        total_bytes (int): The exact number of bytes to receive.
+
+    Returns:
+        bytes: The received bytes.
+
+    Raises:
+        ProtocolError: If `total_bytes` is negative.
+        ConnectionClosedError: If the peer disconnects before all bytes are received,
+                               or if an OSError occurs during reception.
+    """
 
     if total_bytes < 0:
         raise ProtocolError("Cannot receive a negative number of bytes.")
@@ -92,7 +133,17 @@ def receive_exactly(sock: socket.socket, total_bytes: int) -> bytes:
 def send_file_bytes(
     sock: socket.socket, file_path: Path, buffer_size: int
 ) -> None:
-    """Stream a file to the peer in chunks."""
+    """
+    Streams the content of a local file to the peer over the socket in chunks.
+
+    Args:
+        sock (socket.socket): The socket connected to the peer.
+        file_path (Path): The path to the local file to be sent.
+        buffer_size (int): The size of each chunk to read from the file and send.
+
+    Raises:
+        ConnectionClosedError: If an OSError occurs while sending file data.
+    """
 
     with file_path.open("rb") as file_handle:
         while True:
@@ -111,7 +162,23 @@ def send_file_bytes(
 def receive_file_bytes(
     sock: socket.socket, destination_path: Path, expected_size: int, buffer_size: int
 ) -> str:
-    """Receive a file from the socket and return its SHA-256 hash."""
+    """
+    Receives file bytes from the socket and writes them to a specified destination path.
+    Computes the SHA-256 hash of the received data for integrity verification.
+
+    Args:
+        sock (socket.socket): The socket connected to the peer.
+        destination_path (Path): The local path where the received file will be saved.
+        expected_size (int): The total number of bytes expected to be received for the file.
+        buffer_size (int): The size of each chunk to receive and write.
+
+    Returns:
+        str: The hexadecimal SHA-256 hash of the received file content.
+
+    Raises:
+        ProtocolError: If `expected_size` is negative.
+        ConnectionClosedError: If the peer closes the connection unexpectedly during reception.
+    """
 
     if expected_size < 0:
         raise ProtocolError("File size cannot be negative.")

@@ -30,9 +30,20 @@ from utils import (
 
 
 class SocketShareClient:
-    """Interactive TCP client used to talk to the SocketShare server."""
+    """
+    Interactive TCP client used to communicate with the SocketShare server.
+    Manages connections, file listing, uploading, and downloading.
+    """
 
     def __init__(self, host: str, port: int, buffer_size: int) -> None:
+        """
+        Initializes the SocketShareClient.
+
+        Args:
+            host (str): The hostname or IP address of the server to connect to.
+            port (int): The port number of the server to connect to.
+            buffer_size (int): The size of the buffer used for sending/receiving data.
+        """
         self.host = host
         self.port = port
         self.buffer_size = buffer_size
@@ -40,7 +51,12 @@ class SocketShareClient:
         self.last_listed_files: list[dict[str, Any]] = []
 
     def connect(self) -> bool:
-        """Connect to the server and report success or failure."""
+        """
+        Establishes a connection to the SocketShare server.
+
+        Returns:
+            bool: True if the connection was successful, False otherwise.
+        """
 
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -57,7 +73,10 @@ class SocketShareClient:
         return True
 
     def run(self) -> None:
-        """Main interactive loop for the CLI menu."""
+        """
+        Main interactive loop for the client's command-line interface.
+        Handles user input and dispatches to appropriate methods.
+        """
 
         if self.client_socket is None and not self.connect():
             return
@@ -93,7 +112,10 @@ class SocketShareClient:
             self.quit()
 
     def list_files(self) -> None:
-        """Request the server's file list and display it."""
+        """
+        Requests the server's file listing and displays it to the user.
+        Caches the listed files for potential future download selections.
+        """
 
         response = self.fetch_file_listing()
         if response is None:
@@ -115,7 +137,13 @@ class SocketShareClient:
         print("Tip: For DOWNLOAD, you can enter the file number or the exact filename.")
 
     def upload_file(self, file_path_text: str) -> None:
-        """Upload one local file to the server."""
+        """
+        Uploads a specified local file to the server.
+
+        Args:
+            file_path_text (str): The string path to the local file to be uploaded.
+                                  Can include surrounding quotes.
+        """
 
         cleaned_input = strip_surrounding_quotes(file_path_text)
         local_path = Path(cleaned_input).expanduser()
@@ -164,7 +192,13 @@ class SocketShareClient:
         print(f"Integrity verified by server: {result.get('sha256', 'unknown')}")
 
     def download_file(self, filename_text: str) -> None:
-        """Download one server-side file into the local downloads directory."""
+        """
+        Downloads a file from the server, identified by its name or a listed index.
+
+        Args:
+            filename_text (str): The filename or the numbered index from the
+                                 last file listing (e.g., "1" or "my_document.txt").
+        """
 
         resolved_filename = self.resolve_server_filename(filename_text)
 
@@ -227,7 +261,9 @@ class SocketShareClient:
         print(f"Integrity verified: {received_hash}")
 
     def quit(self) -> None:
-        """Disconnect from the server cleanly."""
+        """
+        Sends a QUIT request to the server and closes the client's connection cleanly.
+        """
 
         if self.client_socket is None:
             return
@@ -242,7 +278,16 @@ class SocketShareClient:
             self.close_local_socket()
 
     def send_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
-        """Send one request and return the server's immediate response."""
+        """
+        Sends a JSON request to the server and awaits its immediate JSON response.
+
+        Args:
+            request (dict[str, Any]): The dictionary representing the JSON request to send.
+
+        Returns:
+            dict[str, Any] | None: The server's JSON response, or None if a
+                                   connection or protocol error occurred.
+        """
 
         try:
             send_json(self.require_socket(), request)
@@ -262,7 +307,13 @@ class SocketShareClient:
         return response
 
     def fetch_file_listing(self) -> dict[str, Any] | None:
-        """Fetch the server file list and cache it for later download selection."""
+        """
+        Fetches the current file listing from the server and caches it.
+
+        Returns:
+            dict[str, Any] | None: The server's response containing the file list,
+                                   or None if an error occurred.
+        """
 
         response = self.send_request({"type": "LIST"})
         if response is None or response.get("status") != "OK":
@@ -277,7 +328,19 @@ class SocketShareClient:
         return response
 
     def resolve_server_filename(self, filename_text: str) -> str | None:
-        """Resolve a download target from a number, display line, or filename."""
+        """
+        Resolves a server filename from user input, which can be:
+        1. A file number from the last 'LIST' command.
+        2. A full display line from the 'LIST' command.
+        3. An exact filename.
+        4. A case-insensitive match against filenames.
+
+        Args:
+            filename_text (str): The raw string input from the user.
+
+        Returns:
+            str | None: The resolved server filename if found, otherwise None.
+        """
 
         cleaned_input = strip_surrounding_quotes(filename_text)
 
@@ -340,14 +403,25 @@ class SocketShareClient:
         return cleaned_input
 
     def require_socket(self) -> socket.socket:
-        """Return the active socket or raise a runtime error."""
+        """
+        Returns the active socket connection.
+
+        Raises:
+            RuntimeError: If the client is not currently connected to a server.
+
+        Returns:
+            socket.socket: The active socket object.
+        """
 
         if self.client_socket is None:
             raise RuntimeError("Client is not connected to a server.")
         return self.client_socket
 
     def close_local_socket(self) -> None:
-        """Close the local socket object and reset the client state."""
+        """
+        Closes the client's local socket connection and resets its state.
+        Handles potential OSError during socket closure gracefully.
+        """
 
         if self.client_socket is None:
             return
@@ -361,7 +435,9 @@ class SocketShareClient:
 
     @staticmethod
     def print_menu() -> None:
-        """Display the numbered main menu."""
+        """
+        Displays the main interactive menu options to the user.
+        """
 
         print()
         print("SocketShare Menu")
@@ -373,7 +449,9 @@ class SocketShareClient:
 
     @staticmethod
     def print_help() -> None:
-        """Display supported commands and what they do."""
+        """
+        Displays a detailed help message outlining all supported commands and their functions.
+        """
 
         print()
         print("Supported commands:")
@@ -385,7 +463,13 @@ class SocketShareClient:
 
 
 def parse_arguments() -> argparse.Namespace:
-    """Parse command-line arguments for the client."""
+    """
+    Parses command-line arguments provided to the client script.
+
+    Returns:
+        argparse.Namespace: An object containing the parsed arguments,
+                            e.g., host and port.
+    """
 
     parser = argparse.ArgumentParser(description="Start the SocketShare TCP client.")
     parser.add_argument(
@@ -398,7 +482,13 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main() -> int:
-    """Program entry point."""
+    """
+    Program entry point for the SocketShare client.
+    Parses arguments, initializes the client, and starts its main loop.
+
+    Returns:
+        int: Exit code of the program (0 for success).
+    """
 
     arguments = parse_arguments()
     client = SocketShareClient(arguments.host, arguments.port, BUFFER_SIZE)

@@ -9,14 +9,34 @@ from pathlib import Path
 
 
 def ensure_directory(path: Path) -> Path:
-    """Create a directory if it does not already exist."""
+    """
+    Ensures that a given directory path exists. If the directory does not exist,
+    it is created along with any necessary parent directories.
+
+    Args:
+        path (Path): The pathlib.Path object representing the directory to ensure.
+
+    Returns:
+        Path: The pathlib.Path object of the ensured directory.
+    """
 
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def compute_sha256(file_path: Path, chunk_size: int = 65_536) -> str:
-    """Compute the SHA-256 hash of a file on disk."""
+    """
+    Computes the SHA-256 hash of a file located on disk.
+    Reads the file in chunks to efficiently handle large files.
+
+    Args:
+        file_path (Path): The pathlib.Path object of the file to hash.
+        chunk_size (int): The size of chunks (in bytes) to read from the file.
+                          Defaults to 65,536 bytes (64 KB).
+
+    Returns:
+        str: The hexadecimal representation of the file's SHA-256 hash.
+    """
 
     digest = hashlib.sha256()
 
@@ -31,7 +51,16 @@ def compute_sha256(file_path: Path, chunk_size: int = 65_536) -> str:
 
 
 def format_file_size(num_bytes: int) -> str:
-    """Convert a raw byte count into a human-readable size string."""
+    """
+    Converts a raw byte count into a human-readable string representation
+    using appropriate units (B, KB, MB, GB, TB).
+
+    Args:
+        num_bytes (int): The number of bytes to format.
+
+    Returns:
+        str: A human-readable string (e.g., "1.23 MB", "500 B").
+    """
 
     size = float(num_bytes)
     units = ["B", "KB", "MB", "GB", "TB"]
@@ -47,7 +76,20 @@ def format_file_size(num_bytes: int) -> str:
 
 
 def safe_filename(filename: str) -> str:
-    """Keep only the final filename component to avoid path traversal."""
+    """
+    Extracts a safe filename from a given path, preventing directory traversal
+    by returning only the final path component.
+
+    Args:
+        filename (str): The potentially unsafe filename string.
+
+    Returns:
+        str: A safe filename string suitable for file system operations.
+
+    Raises:
+        ValueError: If the cleaned filename is empty or represents a directory
+                    traversal attempt (e.g., ".", "..").
+    """
 
     clean_name = Path(filename).name.strip()
 
@@ -58,7 +100,16 @@ def safe_filename(filename: str) -> str:
 
 
 def strip_surrounding_quotes(text: str) -> str:
-    """Remove one matching pair of wrapping quotes from user input."""
+    """
+    Removes a single matching pair of surrounding single or double quotes
+    from the given string, if present. Leading/trailing whitespace is also stripped.
+
+    Args:
+        text (str): The input string, potentially with surrounding quotes.
+
+    Returns:
+        str: The string with one layer of surrounding quotes removed, if they existed.
+    """
 
     cleaned_text = text.strip()
 
@@ -73,7 +124,20 @@ def strip_surrounding_quotes(text: str) -> str:
 
 
 def normalize_text_for_matching(text: str) -> str:
-    """Normalize user-entered text so Unicode whitespace mismatches do not matter."""
+    """
+    Normalizes a string for robust matching, typically for user input.
+    It performs the following operations:
+    1. Applies Unicode Normalization Form KC (NFKC) to handle compatible characters.
+    2. Replaces all whitespace characters with standard spaces.
+    3. Collapses multiple spaces into a single space and strips leading/trailing spaces.
+
+    Args:
+        text (str): The input string to normalize.
+
+    Returns:
+        str: The normalized string, suitable for case-insensitive and
+             whitespace-agnostic comparisons.
+    """
 
     normalized_text = unicodedata.normalize("NFKC", text)
     normalized_spaces = "".join(
@@ -83,7 +147,18 @@ def normalize_text_for_matching(text: str) -> str:
 
 
 def unique_path_for_file(directory: Path, filename: str) -> Path:
-    """Return a non-conflicting file path by appending a counter if needed."""
+    """
+    Generates a unique file path within a specified directory.
+    If a file with the given filename already exists, it appends a counter
+    (e.g., "filename_1.txt", "filename_2.txt") to create a non-conflicting path.
+
+    Args:
+        directory (Path): The target directory where the file will be saved.
+        filename (str): The desired filename.
+
+    Returns:
+        Path: A pathlib.Path object representing a unique, non-existent file path.
+    """
 
     ensure_directory(directory)
     candidate = directory / filename
@@ -102,7 +177,17 @@ def unique_path_for_file(directory: Path, filename: str) -> Path:
 
 
 def build_file_listing(directory: Path) -> list[dict[str, int | str]]:
-    """Return a sorted list of visible files in a directory."""
+    """
+    Builds a list of visible files (not starting with '.') in a given directory,
+    sorted alphabetically by filename.
+
+    Args:
+        directory (Path): The pathlib.Path object of the directory to scan.
+
+    Returns:
+        list[dict[str, int | str]]: A list of dictionaries, where each dictionary
+                                    contains 'filename' (str) and 'size' (int) for a file.
+    """
 
     ensure_directory(directory)
     files: list[dict[str, int | str]] = []
@@ -115,7 +200,14 @@ def build_file_listing(directory: Path) -> list[dict[str, int | str]]:
 
 
 def remove_file_if_exists(file_path: Path) -> None:
-    """Delete a file if it exists, ignoring missing-file errors."""
+    """
+    Deletes a file from the file system if it exists.
+    Handles FileNotFoundError gracefully, so no error is raised if the file
+    is already absent.
+
+    Args:
+        file_path (Path): The pathlib.Path object of the file to remove.
+    """
 
     try:
         file_path.unlink()
@@ -124,14 +216,29 @@ def remove_file_if_exists(file_path: Path) -> None:
 
 
 def format_endpoint(address: tuple[str, int]) -> str:
-    """Format a socket address for readable logs."""
+    """
+    Formats a socket address (host, port) tuple into a human-readable string.
+
+    Args:
+        address (tuple[str, int]): A tuple containing the host IP/name (str)
+                                   and port number (int).
+
+    Returns:
+        str: A formatted string like "host:port".
+    """
 
     host, port = address
     return f"{host}:{port}"
 
 
 def log_event(source: str, message: str) -> None:
-    """Print a timestamped log message."""
+    """
+    Prints a timestamped log message to the console.
+
+    Args:
+        source (str): The source of the log event (e.g., "CLIENT", "SERVER").
+        message (str): The main content of the log message.
+    """
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] [{source}] {message}")
