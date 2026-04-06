@@ -10,7 +10,7 @@ SocketShare: TCP Client-Server File Transfer System
 
 ## 2. Short Description
 
-This project implements a reliable file transfer application using the Python Socket API and a client-server architecture. The server accepts multiple clients concurrently, stores uploaded files, lists files available on the server, and sends requested files back to clients. The client provides a simple command-line menu so the workflow is easy to follow during testing and grading.
+This project implements a reliable file transfer application using the Python Socket API and a client-server architecture. The server accepts multiple clients concurrently, stores uploaded files, lists files available on the server, and sends requested files back to clients. The client now opens an enhanced terminal dashboard on supported terminals, while still keeping a classic command-line fallback so the workflow remains easy to follow during testing and grading.
 
 ## 3. Architecture Overview
 
@@ -32,7 +32,8 @@ This project implements a reliable file transfer application using the Python So
 
 - TCP socket-based client-server communication
 - Multiple clients handled concurrently using `threading`
-- Interactive client CLI menu
+- Enhanced terminal dashboard client UI with live file list, keyboard shortcuts, and activity log
+- Classic client CLI menu fallback for unsupported terminals
 - `LIST` server files
 - `UPLOAD` local file to server storage
 - `DOWNLOAD` server file to local `downloads/`
@@ -71,6 +72,8 @@ CMPT371_A3_Socket_Programming/
 - Python 3.9 or newer
 - No external Python packages are required
 - Uses only the Python standard library
+- The enhanced client dashboard uses `curses` on supported interactive terminals
+- If `curses` is unavailable, the client automatically falls back to the classic menu
 
 ## 7. Fresh Environment Setup
 
@@ -143,6 +146,20 @@ cd CMPT371_A3_Socket_Programming
 python3 src/client.py
 ```
 
+By default, the client opens the enhanced terminal dashboard when the terminal supports it.
+
+If you want the original text menu explicitly, run:
+
+```bash
+python3 src/client.py --ui classic
+```
+
+If you want to request the dashboard explicitly, run:
+
+```bash
+python3 src/client.py --ui tui
+```
+
 Optional custom host/port:
 
 ```bash
@@ -210,7 +227,7 @@ This demonstrates multiple clients connected to the same server at the same time
 This sequence is short and works well for the assignment demo:
 
 1. Show `python3 src/server.py` starting successfully.
-2. Open Client A and show the main menu.
+2. Open Client A and show the terminal dashboard.
 3. Run `LIST` and show that the server is initially empty or has existing files.
 4. Upload `sample_files/demo.txt`.
 5. Show the server logs confirming the upload.
@@ -293,3 +310,26 @@ Solution:
 
 - retry the transfer
 - ensure the connection was not interrupted during upload or download
+
+### Problem: The enhanced terminal dashboard does not open
+
+Possible causes:
+
+- the terminal is not interactive
+- the terminal window is too small
+- the Python environment does not support `curses`
+
+Solution:
+
+- resize the terminal window
+- run the client directly in a normal terminal
+- use the fallback client with:
+
+```bash
+python3 src/client.py --ui classic
+```
+
+## 17. Acknowledgements / Sources
+
+- Sample repo structure/reference used for submission expectations: [mariam-bebawy/CMPT371_A3_Socket_Programming](https://github.com/mariam-bebawy/CMPT371_A3_Socket_Programming)
+- Limited ChatGPT assistance was used for small wording, documentation, and UI brainstorming support. All final code integration, testing, and project submission decisions were reviewed and completed by the team.

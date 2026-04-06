@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import re
 import socket
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,13 @@ class SocketShareClient:
     Manages connections, file listing, uploading, and downloading.
     """
 
-    def __init__(self, host: str, port: int, buffer_size: int) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        buffer_size: int,
+        message_handler: Callable[[str], None] | None = None,
+    ) -> None:
         """
         Initializes the SocketShareClient.
 
@@ -49,8 +56,19 @@ class SocketShareClient:
         self.buffer_size = buffer_size
         self.client_socket: socket.socket | None = None
         self.last_listed_files: list[dict[str, Any]] = []
+        self.message_handler = message_handler or print
 
-    def connect(self) -> bool:
+    def emit(self, message: str = "") -> None:
+        """Sends a user-facing message to the active UI."""
+
+        self.message_handler(message)
+
+    def set_message_handler(self, message_handler: Callable[[str], None]) -> None:
+        """Replaces the active message handler used for user-facing output."""
+
+        self.message_handler = message_handler
+
+    def connect(self, show_help: bool = True) -> bool:
         """
         Establishes a connection to the SocketShare server.
 
@@ -63,13 +81,14 @@ class SocketShareClient:
         try:
             self.client_socket.connect((self.host, self.port))
         except OSError as exc:  # Catch network-related errors during connection
-            print(f"Could not connect to {self.host}:{self.port}: {exc}")
+            self.emit(f"Could not connect to {self.host}:{self.port}: {exc}")
             self.client_socket.close()  # Close the socket on connection failure
             self.client_socket = None    # Reset socket to indicate no active connection
             return False
 
-        print(f"Connected to SocketShare server at {self.host}:{self.port}")
-        self.print_help()
+        self.emit(f"Connected to SocketShare server at {self.host}:{self.port}")
+        if show_help:
+            self.print_help()
         return True
 
     def run(self) -> None:
@@ -102,14 +121,16 @@ class SocketShareClient:
                     self.quit()  # Perform graceful disconnect
                     break        # Exit the main loop
                 else:
-                    print("Invalid option. Type 4 for help.")
+                    self.emit("Invalid option. Type 4 for help.")
 
                 if self.client_socket is None:  # Check if connection was closed
-                    print("Client session ended because the server connection "
-                          "is no longer active.")
+                    self.emit(
+                        "Client session ended because the server connection "
+                        "is no longer active."
+                    )
                     break
         except KeyboardInterrupt:  # Handle Ctrl+C to gracefully close the client
-            print("\nKeyboard interrupt received. Closing client.")
+            self.emit("\nKeyboard interrupt received. Closing client.")
             self.quit()
 
     def list_files(self) -> None:
@@ -124,18 +145,20 @@ class SocketShareClient:
 
         files = response.get("files", [])
         message = response.get("message", "")
-        print(message)
+        self.emit(message)
 
         if not files:
             return
 
-        print("Available files:")
+        self.emit("Available files:")
         for index, file_info in enumerate(files, start=1):
             filename = str(file_info.get("filename", "unknown"))
             size = int(file_info.get("size", 0))
-            print(f"  {index}. {filename} ({format_file_size(size)})")
+            self.emit(f"  {index}. {filename} ({format_file_size(size)})")
 
-        print("Tip: For DOWNLOAD, you can enter the file number or the exact filename.")
+        self.emit(
+            "Tip: For DOWNLOAD, you can enter the file number or the exact filename."
+        )
 
     def upload_file(self, file_path_text: str) -> None:
         """
@@ -150,7 +173,7 @@ class SocketShareClient:
         local_path = Path(cleaned_input).expanduser()
 
         if not local_path.is_file():  # Ensure the local file exists
-            print(f"Local file not found: {local_path}")
+            self.emit(f"Local file not found: {local_path}")
             return
 
         file_size = local_path.stat().st_size
@@ -170,7 +193,7 @@ class SocketShareClient:
 
         # Server must send a "READY" response before file bytes are sent
         if response.get("type") != "READY" or response.get("status") != "OK":
-            print(response.get("message", "Server refused the upload."))
+            self.emit(response.get("message", "Server refused the upload."))
             return
 
         try:
@@ -179,21 +202,21 @@ class SocketShareClient:
             # Receive final upload result from server
             result = receive_json(self.require_socket())
         except OSError as exc:  # Handle issues reading the local file
-            print(f"Could not read the local file for upload: {exc}")
+            self.emit(f"Could not read the local file for upload: {exc}")
             return
         except (ConnectionClosedError, ProtocolError) as exc:
             self.close_local_socket()  # Close socket if connection is lost
-            print(f"Upload failed because the connection was lost: {exc}")
+            self.emit(f"Upload failed because the connection was lost: {exc}")
             return
 
         if result.get("status") != "OK":  # Server reported an issue
-            print(result.get("message", "Server reported an upload error."))
+            self.emit(result.get("message", "Server reported an upload error."))
             return
 
         saved_name = str(result.get("filename", local_path.name))
         saved_size = int(result.get("filesize", file_size))
-        print(f"Upload complete: {saved_name} ({format_file_size(saved_size)})")
-        print(f"Integrity verified by server: {result.get('sha256', 'unknown')}")
+        self.emit(f"Upload complete: {saved_name} ({format_file_size(saved_size)})")
+        self.emit(f"Integrity verified by server: {result.get('sha256', 'unknown')}")
 
     def download_file(self, filename_text: str) -> None:
         """
@@ -212,7 +235,7 @@ class SocketShareClient:
         try:
             requested_name = safe_filename(resolved_filename)
         except ValueError as exc:  # Invalid filename characters
-            print(exc)
+            self.emit(str(exc))
             return
 
         response = self.send_request({"type": "DOWNLOAD", "filename": requested_name})
@@ -221,7 +244,7 @@ class SocketShareClient:
 
         # Server must send DOWNLOAD_READY before file bytes are sent
         if response.get("type") != "DOWNLOAD_READY" or response.get("status") != "OK":
-            print(response.get("message", "Server could not start the download."))
+            self.emit(response.get("message", "Server could not start the download."))
             return
 
         expected_size = response.get("filesize")
@@ -230,11 +253,11 @@ class SocketShareClient:
 
         # Validate crucial metadata from the server
         if not isinstance(expected_size, int) or expected_size < 0:
-            print("Server returned an invalid file size.")
+            self.emit("Server returned an invalid file size.")
             return
 
         if not isinstance(expected_hash, str) or len(expected_hash) != 64:
-            print("Server returned an invalid SHA-256 hash.")
+            self.emit("Server returned an invalid SHA-256 hash.")
             return
 
         downloads_directory = ensure_directory(DOWNLOADS_PATH)
@@ -252,22 +275,24 @@ class SocketShareClient:
         except (ConnectionClosedError, ProtocolError) as exc:
             self.close_local_socket()
             remove_file_if_exists(destination_path)  # Clean up partial download
-            print(f"Download failed because the connection was lost: {exc}")
+            self.emit(f"Download failed because the connection was lost: {exc}")
             return
         except OSError as exc:
             remove_file_if_exists(destination_path)  # Clean up if save failed
-            print(f"Could not save the downloaded file: {exc}")
+            self.emit(f"Could not save the downloaded file: {exc}")
             return
 
         if received_hash != expected_hash:  # Verify file integrity after download
             remove_file_if_exists(destination_path)  # Remove corrupt file
-            print("Integrity verification failed after download. "
-                  "The partial file was removed.")
+            self.emit(
+                "Integrity verification failed after download. "
+                "The partial file was removed."
+            )
             return
 
-        print(f"Download complete: {destination_path}")
-        print(f"Size: {format_file_size(expected_size)}")
-        print(f"Integrity verified: {received_hash}")
+        self.emit(f"Download complete: {destination_path}")
+        self.emit(f"Size: {format_file_size(expected_size)}")
+        self.emit(f"Integrity verified: {received_hash}")
 
     def quit(self) -> None:
         """
@@ -280,10 +305,10 @@ class SocketShareClient:
         try:
             send_json(self.client_socket, {"type": "QUIT"})  # Send QUIT command
             response = receive_json(self.client_socket)     # Await server's response
-            print(response.get("message", "Disconnected from server."))
+            self.emit(response.get("message", "Disconnected from server."))
         except (ConnectionClosedError, ProtocolError):
             # If connection is already closed or protocol error, just acknowledge
-            print("Connection closed.")
+            self.emit("Connection closed.")
         finally:
             self.close_local_socket()  # Always ensure local socket is closed
 
@@ -304,15 +329,15 @@ class SocketShareClient:
             response = receive_json(self.require_socket()) 
         except ConnectionClosedError as exc:  # Handle unexpected connection loss
             self.close_local_socket()
-            print(f"Connection lost: {exc}")
+            self.emit(f"Connection lost: {exc}")
             return None
         except ProtocolError as exc:  # Handle malformed server responses
             self.close_local_socket()
-            print(f"Protocol error: {exc}")
+            self.emit(f"Protocol error: {exc}")
             return None
 
         if response.get("status") == "ERROR":  # Server explicitly reported an error
-            print(response.get("message", "The server returned an error."))
+            self.emit(response.get("message", "The server returned an error."))
 
         return response
 
@@ -355,7 +380,7 @@ class SocketShareClient:
         cleaned_input = strip_surrounding_quotes(filename_text)
 
         if not cleaned_input:  # Handle empty input
-            print("Please enter a file number or filename.")
+            self.emit("Please enter a file number or filename.")
             return None
 
         files = self.last_listed_files
@@ -372,8 +397,10 @@ class SocketShareClient:
                 return str(files[selection - 1].get("filename", ""))
 
             # Provide feedback if number is out of range
-            print(f"File number {selection} is out of range. "
-                  "Run LIST to see valid numbers.")
+            self.emit(
+                f"File number {selection} is out of range. "
+                "Run LIST to see valid numbers."
+            )
             return None
 
         # Attempt to match input as a numbered display line (e.g., "1. my_file.txt (10 KB)")
@@ -384,8 +411,10 @@ class SocketShareClient:
                 return str(files[selection - 1].get("filename", ""))
 
             # Provide feedback if number from line is out of range
-            print(f"File number {selection} is out of range. "
-                  "Run LIST to see valid numbers.")
+            self.emit(
+                f"File number {selection} is out of range. "
+                "Run LIST to see valid numbers."
+            )
             return None
 
         if not files:  # If still no files, treat input as literal filename
@@ -419,8 +448,10 @@ class SocketShareClient:
             return matched_filenames[0]
 
         if len(matched_filenames) > 1:  # Ambiguous match, require specific input
-            print("Multiple files matched that name. "
-                  "Please use the file number from LIST.")
+            self.emit(
+                "Multiple files matched that name. "
+                "Please use the file number from LIST."
+            )
             return None
 
         # If no match, assume input is an exact filename for server lookup
@@ -457,33 +488,33 @@ class SocketShareClient:
 
         self.client_socket = None
 
-    @staticmethod
-    def print_menu() -> None:
+    def print_menu(self) -> None:
         """
         Displays the main interactive menu options to the user.
         """
 
-        print()
-        print("SocketShare Menu")
-        print("1) LIST files on server")
-        print("2) UPLOAD local file to server")
-        print("3) DOWNLOAD file from server")
-        print("4) HELP")
-        print("5) QUIT")
+        self.emit()
+        self.emit("SocketShare Menu")
+        self.emit("1) LIST files on server")
+        self.emit("2) UPLOAD local file to server")
+        self.emit("3) DOWNLOAD file from server")
+        self.emit("4) HELP")
+        self.emit("5) QUIT")
 
-    @staticmethod
-    def print_help() -> None:
+    def print_help(self) -> None:
         """
         Displays a detailed help message outlining all supported commands and their functions.
         """
 
-        print()
-        print("Supported commands:")
-        print("  1 or LIST     - Show files currently stored on the server")
-        print("  2 or UPLOAD   - Upload a local file path to the server")
-        print("  3 or DOWNLOAD - Download a server file by number or exact filename")
-        print("  4 or HELP     - Show this help message")
-        print("  5 or QUIT     - Disconnect from the server")
+        self.emit()
+        self.emit("Supported commands:")
+        self.emit("  1 or LIST     - Show files currently stored on the server")
+        self.emit("  2 or UPLOAD   - Upload a local file path to the server")
+        self.emit(
+            "  3 or DOWNLOAD - Download a server file by number or exact filename"
+        )
+        self.emit("  4 or HELP     - Show this help message")
+        self.emit("  5 or QUIT     - Disconnect from the server")
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -502,6 +533,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--port", type=int, default=DEFAULT_PORT, help="Server TCP port."
     )
+    parser.add_argument(
+        "--ui",
+        choices=("auto", "tui", "classic"),
+        default="auto",
+        help="Choose the client interface mode. Defaults to auto.",
+    )
     return parser.parse_args()
 
 
@@ -516,6 +553,17 @@ def main() -> int:
 
     arguments = parse_arguments()
     client = SocketShareClient(arguments.host, arguments.port, BUFFER_SIZE)
+    if arguments.ui in {"auto", "tui"}:
+        try:
+            from client_tui import TerminalUiUnavailableError, run_terminal_ui
+
+            run_terminal_ui(client)
+            return 0
+        except TerminalUiUnavailableError as exc:
+            if arguments.ui == "tui":
+                print(f"Terminal UI unavailable: {exc}")
+                print("Falling back to the classic menu.")
+
     client.run()
     return 0
 
