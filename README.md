@@ -295,4 +295,4 @@ Solution:
 ## 17. Acknowledgements / Sources
 
 - Sample repo structure/reference used for submission expectations: [mariam-bebawy/CMPT371_A3_Socket_Programming](https://github.com/mariam-bebawy/CMPT371_A3_Socket_Programming)
-- Limited ChatGPT assistance was used for small wording, documentation, and debugging help. All final code integration, testing, and project submission decisions were reviewed and completed by the team.
+- ChatGPT assistance was used for small wording, documentation, and debugging help. All final code integration, testing, and project submission decisions were reviewed and completed by the team.
